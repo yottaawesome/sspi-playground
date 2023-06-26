@@ -1,6 +1,6 @@
-// Adapted from https://gist.github.com/mmozeiko/c0dfcc8fec527a90a02145d2cc0bfb6d
-// Changes done to clean up compiler errors in C++, print to stdout rather than a 
-// file and remove functions that issue security warnings.
+// Adapted from mmozeiko's sample: https://gist.github.com/mmozeiko/c0dfcc8fec527a90a02145d2cc0bfb6d
+// Changes done to clean up compiler errors in C++ (mainly casts), print to stdout rather than a 
+// file, use wide-string variant of Win32 functions and remove functions that issue security warnings.
 
 #define WIN32_LEAN_AND_MEAN
 #include <string>
