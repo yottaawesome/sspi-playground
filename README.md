@@ -2,7 +2,7 @@
 
 ## Introduction 
 
-This repo is for experimenting with Microsoft's [Secure Services Provider Interface](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi). In particular, it was created to consolidate experimental code from two different repositories for eaier reference and code consolidation. This consolidation is particularly important, as SSPI samples online are few and very dated.
+This repo is for experimenting with Microsoft's [Secure Services Provider Interface](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi) (SSPI). In particular, it was created to consolidate experimental code from two different repositories for easier reference and code consolidation. This consolidation is particularly important, as SSPI samples online are few and very dated.
 
 ## Additional resources
 
