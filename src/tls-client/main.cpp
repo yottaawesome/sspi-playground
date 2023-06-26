@@ -5,6 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <string>
 #include <iostream>
+#include <vector>
 #include <format>
 #include <winsock2.h>
 #include <windows.h>
@@ -73,7 +74,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
                      | SCH_CRED_NO_DEFAULT_CREDS,     // no client certificate authentication
         };
 
-        if (AcquireCredentialsHandleW(NULL, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s->handle, nullptr) != SEC_E_OK)
+        if (AcquireCredentialsHandleW(nullptr, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s->handle, nullptr) != SEC_E_OK)
         {
             closesocket(s->sock);
             WSACleanup();
@@ -82,7 +83,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
     }
 
     s->received = s->used = s->available = 0;
-    s->decrypted = NULL;
+    s->decrypted = nullptr;
 
     // perform tls handshake
     // 1) call InitializeSecurityContext to create/update schannel context
@@ -92,7 +93,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
     // 5) when it returns SEC_E_INCOMPLETE_MESSAGE - need to read more data from server
     // 6) otherwise read data from server and go to step 1
 
-    CtxtHandle* context = NULL;
+    CtxtHandle* context = nullptr;
     int result = 0;
     for (;;)
     {
@@ -319,7 +320,7 @@ int tls_write(tls_socket* s, const void* buffer, unsigned size)
 
 // blocking read, waits & reads up to size bytes, returns amount of bytes received on success (<= size)
 // returns 0 on disconnect or negative value on error
-int tls_read(tls_socket* s, void* buffer, int size)
+int tls_read(tls_socket* s, void* buffer, size_t size)
 {
     int result = 0;
 
@@ -462,10 +463,10 @@ int main()
 
     // write response to file
     int received = 0;
+    std::vector<char> buf(65536);
     for (;;)
     {
-        char buf[65536];
-        int r = tls_read(&s, buf, sizeof(buf));
+        int r = tls_read(&s, buf.data(), buf.size());
         if (r < 0)
         {
             std::wcout << L"Error receiving data\n";
@@ -478,7 +479,7 @@ int main()
         }
         else
         {
-            std::wcout << std::string(buf, r).c_str() << std::endl;
+            std::wcout << std::string(buf.data(), r).c_str() << std::endl;
             received += r;
         }
     }
