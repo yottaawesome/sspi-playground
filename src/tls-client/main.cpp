@@ -21,7 +21,8 @@
 
 constexpr unsigned TLS_MAX_PACKET_SIZE = 16384 + 512; // payload + extra over head for header/mac/padding (probably an overestimate)
 
-typedef struct {
+struct tls_socket 
+{
     SOCKET sock;
     CredHandle handle;
     CtxtHandle context;
@@ -31,7 +32,7 @@ typedef struct {
     int available;   // byte count available for decrypted bytes
     char* decrypted; // points to incoming buffer where data is decrypted inplace
     char incoming[TLS_MAX_PACKET_SIZE];
-} tls_socket;
+};
 
 // returns 0 on success or negative value on error
 int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
@@ -54,7 +55,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
     std::wstring sport = std::to_wstring(port);
 
     // connect to server
-    if (!WSAConnectByNameW(s->sock, (LPWSTR)hostname, sport.data(), NULL, NULL, NULL, NULL, NULL, NULL))
+    if (!WSAConnectByNameW(s->sock, (LPWSTR)hostname, sport.data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr))
     {
         closesocket(s->sock);
         WSACleanup();
@@ -72,7 +73,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
                      | SCH_CRED_NO_DEFAULT_CREDS,     // no client certificate authentication
         };
 
-        if (AcquireCredentialsHandleW(NULL, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &cred, NULL, NULL, &s->handle, NULL) != SEC_E_OK)
+        if (AcquireCredentialsHandleW(NULL, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s->handle, nullptr) != SEC_E_OK)
         {
             closesocket(s->sock);
             WSACleanup();
@@ -111,23 +112,24 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
         SECURITY_STATUS sec = InitializeSecurityContextW(
             &s->handle,
             context,
-            context ? NULL : (SEC_WCHAR*)hostname,
+            context ? nullptr : (SEC_WCHAR*)hostname,
             flags,
             0,
             0,
-            context ? &indesc : NULL,
+            context ? &indesc : nullptr,
             0,
-            context ? NULL : &s->context,
+            context ? nullptr : &s->context,
             &outdesc,
             &flags,
-            NULL);
+            nullptr
+        );
 
         // after first call to InitializeSecurityContext context is available and should be reused for next calls
         context = &s->context;
 
         if (inbuffers[1].BufferType == SECBUFFER_EXTRA)
         {
-            MoveMemory(s->incoming, s->incoming + (s->received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
+            RtlMoveMemory(s->incoming, s->incoming + (s->received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
             s->received = inbuffers[1].cbBuffer;
         }
         else
@@ -233,8 +235,13 @@ void tls_disconnect(tls_socket* s)
     outbuffers[0].BufferType = SECBUFFER_TOKEN;
 
     SecBufferDesc outdesc = { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
-    DWORD flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
-    if (InitializeSecurityContextW(&s->handle, &s->context, NULL, flags, 0, 0, &outdesc, 0, NULL, &outdesc, &flags, NULL) == SEC_E_OK)
+    DWORD flags = 
+        ISC_REQ_ALLOCATE_MEMORY 
+        | ISC_REQ_CONFIDENTIALITY 
+        | ISC_REQ_REPLAY_DETECT 
+        | ISC_REQ_SEQUENCE_DETECT 
+        | ISC_REQ_STREAM;
+    if (InitializeSecurityContextW(&s->handle, &s->context, nullptr, flags, 0, 0, &outdesc, 0, nullptr, &outdesc, &flags, nullptr) == SEC_E_OK)
     {
         char* buffer = (char*)outbuffers[0].pvBuffer;
         int size = outbuffers[0].cbBuffer;
@@ -280,7 +287,7 @@ int tls_write(tls_socket* s, const void* buffer, unsigned size)
         buffers[2].pvBuffer = wbuffer + s->sizes.cbHeader + use;
         buffers[2].cbBuffer = s->sizes.cbTrailer;
 
-        CopyMemory(buffers[1].pvBuffer, buffer, use);
+        RtlCopyMemory(buffers[1].pvBuffer, buffer, use);
 
         SecBufferDesc desc = { SECBUFFER_VERSION, ARRAYSIZE(buffers), buffers };
         SECURITY_STATUS sec = EncryptMessage(&s->context, 0, &desc, 0);
@@ -322,7 +329,7 @@ int tls_read(tls_socket* s, void* buffer, int size)
         {
             // if there is decrypted data available, then use it as much as possible
             int use = min(size, s->available);
-            CopyMemory(buffer, s->decrypted, use);
+            RtlCopyMemory(buffer, s->decrypted, use);
             buffer = (char*)buffer + use;
             size -= use;
             result += use;
@@ -330,11 +337,11 @@ int tls_read(tls_socket* s, void* buffer, int size)
             if (use == s->available)
             {
                 // all decrypted data is used, remove ciphertext from incoming buffer so next time it starts from beginning
-                MoveMemory(s->incoming, s->incoming + s->used, s->received - s->used);
+                RtlMoveMemory(s->incoming, s->incoming + s->used, s->received - s->used);
                 s->received -= s->used;
                 s->used = 0;
                 s->available = 0;
-                s->decrypted = NULL;
+                s->decrypted = nullptr;
             }
             else
             {
@@ -359,7 +366,7 @@ int tls_read(tls_socket* s, void* buffer, int size)
 
                 SecBufferDesc desc = { SECBUFFER_VERSION, ARRAYSIZE(buffers), buffers };
 
-                SECURITY_STATUS sec = DecryptMessage(&s->context, &desc, 0, NULL);
+                SECURITY_STATUS sec = DecryptMessage(&s->context, &desc, 0, nullptr);
                 if (sec == SEC_E_OK)
                 {
                     assert(buffers[0].BufferType == SECBUFFER_STREAM_HEADER);
