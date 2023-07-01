@@ -452,8 +452,8 @@ int tls_read(tls_socket* s, void* buffer, uint64_t size)
 
 int main()
 {
-    const wchar_t* hostname = L"www.google.com";
-    const char* hostnameA = "www.google.com";
+    const std::wstring hostname = L"www.google.com";
+    const std::string hostnameA = "www.google.com";
     //const char* hostname = "badssl.com";
     //const char* hostname = "expired.badssl.com";
     //const char* hostname = "wrong.host.badssl.com";
@@ -485,7 +485,6 @@ int main()
     }
 
     // write response to file
-    int received = 0;
     std::string data;
     std::vector<char> buf(65536);
     for (;;)
@@ -504,12 +503,11 @@ int main()
         else
         {
             data += std::string(buf.data(), r);
-            received += r;
         }
     }
 
     std::wcout << data.c_str() << std::endl;
-    std::wcout << std::format(L"Received {} bytes\n", received);
+    std::wcout << std::format(L"Received {} bytes\n", data.size());
 
     tls_disconnect(s);
 
