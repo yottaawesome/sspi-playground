@@ -84,8 +84,8 @@ int tls_connect(tls_socket& s, const std::wstring& hostname)
 {
     // initialize schannel
     {
-        SCH_CREDENTIALS cred =
-        {
+        // https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-sch_credentials
+        SCH_CREDENTIALS cred {
             .dwVersion = SCH_CREDENTIALS_VERSION,
             //.grbitEnabledProtocols = SP_PROT_TLS1_2,  // allow only TLS v1.2
             .dwFlags = SCH_USE_STRONG_CRYPTO          // use only strong crypto alogorithms
@@ -93,7 +93,19 @@ int tls_connect(tls_socket& s, const std::wstring& hostname)
                      | SCH_CRED_NO_DEFAULT_CREDS,     // no client certificate authentication
         };
 
-        if (AcquireCredentialsHandleW(nullptr, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s.handle, nullptr) != SEC_E_OK)
+        // https://learn.microsoft.com/en-us/windows/win32/secauthn/acquirecredentialshandle--schannel
+        SECURITY_STATUS status = AcquireCredentialsHandleW(
+            nullptr,
+            (LPWSTR)UNISP_NAME_W,
+            SECPKG_CRED_OUTBOUND,
+            nullptr,
+            &cred,
+            nullptr,
+            nullptr,
+            &s.handle,
+            nullptr
+        );
+        if (status != SEC_E_OK)
         {
             closesocket(s.sock);
             WSACleanup();
@@ -129,6 +141,7 @@ int tls_connect(tls_socket& s, const std::wstring& hostname)
         SecBufferDesc outdesc = { SECBUFFER_VERSION, ARRAYSIZE(outbuffers), outbuffers };
 
         DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
+        // https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw
         SECURITY_STATUS sec = InitializeSecurityContextW(
             &s.handle,
             context,
@@ -261,7 +274,22 @@ void tls_disconnect(tls_socket& s)
         | ISC_REQ_REPLAY_DETECT 
         | ISC_REQ_SEQUENCE_DETECT 
         | ISC_REQ_STREAM;
-    if (InitializeSecurityContextW(&s.handle, &s.context, nullptr, flags, 0, 0, &outdesc, 0, nullptr, &outdesc, &flags, nullptr) == SEC_E_OK)
+    // https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw
+    SECURITY_STATUS status = InitializeSecurityContextW(
+        &s.handle, 
+        &s.context, 
+        nullptr, 
+        flags, 
+        0, 
+        0, 
+        &outdesc, 
+        0, 
+        nullptr, 
+        &outdesc, 
+        &flags, 
+        nullptr
+    );
+    if (status == SEC_E_OK)
     {
         char* buffer = (char*)outbuffers[0].pvBuffer;
         int size = outbuffers[0].cbBuffer;
