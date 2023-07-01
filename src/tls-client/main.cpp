@@ -35,7 +35,7 @@ struct tls_socket
     char incoming[TLS_MAX_PACKET_SIZE];
 };
 
-int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short port)
+int socket_connect(tls_socket& s, const std::wstring& hostname, unsigned short port)
 {
     // initialize windows sockets
     WSADATA wsadata;
@@ -45,8 +45,8 @@ int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short p
     }
 
     // create TCP IPv4 socket
-    s->sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (s->sock == INVALID_SOCKET)
+    s.sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (s.sock == INVALID_SOCKET)
     {
         WSACleanup();
         return -1;
@@ -55,7 +55,7 @@ int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short p
     std::wstring sport = std::to_wstring(port);
 
     const bool success = WSAConnectByNameW(
-        s->sock,
+        s.sock,
         const_cast<LPWSTR>(hostname.data()),
         sport.data(),
         nullptr,
@@ -69,7 +69,7 @@ int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short p
     // connect to server
     if (!success)
     {
-        closesocket(s->sock);
+        closesocket(s.sock);
         WSACleanup();
         return -1;
     }
@@ -78,7 +78,7 @@ int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short p
 }
 
 // returns 0 on success or negative value on error
-int tls_connect(tls_socket* s, const std::wstring& hostname)
+int tls_connect(tls_socket& s, const std::wstring& hostname)
 {
     // initialize schannel
     {
@@ -91,16 +91,16 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
                      | SCH_CRED_NO_DEFAULT_CREDS,     // no client certificate authentication
         };
 
-        if (AcquireCredentialsHandleW(nullptr, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s->handle, nullptr) != SEC_E_OK)
+        if (AcquireCredentialsHandleW(nullptr, (LPWSTR)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &s.handle, nullptr) != SEC_E_OK)
         {
-            closesocket(s->sock);
+            closesocket(s.sock);
             WSACleanup();
             return -1;
         }
     }
 
-    s->received = s->used = s->available = 0;
-    s->decrypted = nullptr;
+    s.received = s.used = s.available = 0;
+    s.decrypted = nullptr;
 
     // perform tls handshake
     // 1) call InitializeSecurityContext to create/update schannel context
@@ -116,8 +116,8 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
     {
         SecBuffer inbuffers[2] = { 0 };
         inbuffers[0].BufferType = SECBUFFER_TOKEN;
-        inbuffers[0].pvBuffer = s->incoming;
-        inbuffers[0].cbBuffer = s->received;
+        inbuffers[0].pvBuffer = s.incoming;
+        inbuffers[0].cbBuffer = s.received;
         inbuffers[1].BufferType = SECBUFFER_EMPTY;
 
         SecBuffer outbuffers[1] = { 0 };
@@ -128,7 +128,7 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
 
         DWORD flags = ISC_REQ_USE_SUPPLIED_CREDS | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM;
         SECURITY_STATUS sec = InitializeSecurityContextW(
-            &s->handle,
+            &s.handle,
             context,
             context ? nullptr : const_cast<SEC_WCHAR*>(hostname.data()),
             flags,
@@ -136,23 +136,23 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
             0,
             context ? &indesc : nullptr,
             0,
-            context ? nullptr : &s->context,
+            context ? nullptr : &s.context,
             &outdesc,
             &flags,
             nullptr
         );
 
         // after first call to InitializeSecurityContext context is available and should be reused for next calls
-        context = &s->context;
+        context = &s.context;
 
         if (inbuffers[1].BufferType == SECBUFFER_EXTRA)
         {
-            RtlMoveMemory(s->incoming, s->incoming + (s->received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
-            s->received = inbuffers[1].cbBuffer;
+            RtlMoveMemory(s.incoming, s.incoming + (s.received - inbuffers[1].cbBuffer), inbuffers[1].cbBuffer);
+            s.received = inbuffers[1].cbBuffer;
         }
         else
         {
-            s->received = 0;
+            s.received = 0;
         }
 
         if (sec == SEC_E_OK)
@@ -174,7 +174,7 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
 
             while (size != 0)
             {
-                int d = send(s->sock, buffer, size, 0);
+                int d = send(s.sock, buffer, size, 0);
                 if (d <= 0)
                 {
                     break;
@@ -201,14 +201,14 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
         }
 
         // read more data from server when possible
-        if (s->received == sizeof(s->incoming))
+        if (s.received == sizeof(s.incoming))
         {
             // server is sending too much data instead of proper handshake?
             result = -1;
             break;
         }
 
-        int r = recv(s->sock, s->incoming + s->received, sizeof(s->incoming) - s->received, 0);
+        int r = recv(s.sock, s.incoming + s.received, sizeof(s.incoming) - s.received, 0);
         if (r == 0)
         {
             // server disconnected socket
@@ -220,24 +220,24 @@ int tls_connect(tls_socket* s, const std::wstring& hostname)
             result = -1;
             break;
         }
-        s->received += r;
+        s.received += r;
     }
 
     if (result != 0)
     {
         DeleteSecurityContext(context);
-        FreeCredentialsHandle(&s->handle);
-        closesocket(s->sock);
+        FreeCredentialsHandle(&s.handle);
+        closesocket(s.sock);
         WSACleanup();
         return result;
     }
 
-    QueryContextAttributes(context, SECPKG_ATTR_STREAM_SIZES, &s->sizes);
+    QueryContextAttributes(context, SECPKG_ATTR_STREAM_SIZES, &s.sizes);
     return 0;
 }
 
 // disconnects socket & releases resources (call this even if tls_write/tls_read function return error)
-void tls_disconnect(tls_socket* s)
+void tls_disconnect(tls_socket& s)
 {
     DWORD type = SCHANNEL_SHUTDOWN;
 
@@ -247,7 +247,7 @@ void tls_disconnect(tls_socket* s)
     inbuffers[0].cbBuffer = sizeof(type);
 
     SecBufferDesc indesc = { SECBUFFER_VERSION, ARRAYSIZE(inbuffers), inbuffers };
-    ApplyControlToken(&s->context, &indesc);
+    ApplyControlToken(&s.context, &indesc);
 
     SecBuffer outbuffers[1];
     outbuffers[0].BufferType = SECBUFFER_TOKEN;
@@ -259,13 +259,13 @@ void tls_disconnect(tls_socket* s)
         | ISC_REQ_REPLAY_DETECT 
         | ISC_REQ_SEQUENCE_DETECT 
         | ISC_REQ_STREAM;
-    if (InitializeSecurityContextW(&s->handle, &s->context, nullptr, flags, 0, 0, &outdesc, 0, nullptr, &outdesc, &flags, nullptr) == SEC_E_OK)
+    if (InitializeSecurityContextW(&s.handle, &s.context, nullptr, flags, 0, 0, &outdesc, 0, nullptr, &outdesc, &flags, nullptr) == SEC_E_OK)
     {
         char* buffer = (char*)outbuffers[0].pvBuffer;
         int size = outbuffers[0].cbBuffer;
         while (size != 0)
         {
-            int d = send(s->sock, buffer, size, 0);
+            int d = send(s.sock, buffer, size, 0);
             if (d <= 0)
             {
                 // ignore any failures socket will be closed anyway
@@ -276,11 +276,11 @@ void tls_disconnect(tls_socket* s)
         }
         FreeContextBuffer(outbuffers[0].pvBuffer);
     }
-    shutdown(s->sock, SD_BOTH);
+    shutdown(s.sock, SD_BOTH);
 
-    DeleteSecurityContext(&s->context);
-    FreeCredentialsHandle(&s->handle);
-    closesocket(s->sock);
+    DeleteSecurityContext(&s.context);
+    FreeCredentialsHandle(&s.handle);
+    closesocket(s.sock);
     WSACleanup();
 }
 
@@ -462,13 +462,13 @@ int main()
     const char* path = "/";
 
     tls_socket s;
-    if (socket_connect(&s, hostname, 443) != 0)
+    if (socket_connect(s, hostname, 443) != 0)
     {
         std::wcout << std::format(L"Error connecting socket to {}\n", hostname);
         return -1;
     }
 
-    if (tls_connect(&s, hostname) != 0)
+    if (tls_connect(s, hostname) != 0)
     {
         std::wcout << std::format(L"Error connecting to {}\n", hostname);
         return -1;
@@ -480,12 +480,13 @@ int main()
     std::string req = std::format("GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", hostnameA);
     if (tls_write(&s, req.c_str(), req.size()) != 0)
     {
-        tls_disconnect(&s);
+        tls_disconnect(s);
         return -1;
     }
 
     // write response to file
     int received = 0;
+    std::string data;
     std::vector<char> buf(65536);
     for (;;)
     {
@@ -502,14 +503,15 @@ int main()
         }
         else
         {
-            std::wcout << std::string(buf.data(), r).c_str() << std::endl;
+            data += std::string(buf.data(), r);
             received += r;
         }
     }
 
+    std::wcout << data.c_str() << std::endl;
     std::wcout << std::format(L"Received {} bytes\n", received);
 
-    tls_disconnect(&s);
+    tls_disconnect(s);
 
     return 0;
 }
