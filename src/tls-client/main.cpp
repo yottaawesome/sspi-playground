@@ -3,13 +3,15 @@
 // file, use wide-string variant of Win32 functions and remove functions that issue security warnings.
 
 #define WIN32_LEAN_AND_MEAN
+#define SCHANNEL_USE_BLACKLISTS
+#define SECURITY_WIN32
 #include <string>
 #include <iostream>
 #include <vector>
 #include <format>
 #include <winsock2.h>
 #include <windows.h>
-#define SECURITY_WIN32
+#include <subauth.h>
 #include <security.h>
 #include <schannel.h>
 #include <shlwapi.h>
@@ -82,10 +84,10 @@ int tls_connect(tls_socket& s, const std::wstring& hostname)
 {
     // initialize schannel
     {
-        SCHANNEL_CRED cred =
+        SCH_CREDENTIALS cred =
         {
-            .dwVersion = SCHANNEL_CRED_VERSION,
-            .grbitEnabledProtocols = SP_PROT_TLS1_2,  // allow only TLS v1.2
+            .dwVersion = SCH_CREDENTIALS_VERSION,
+            //.grbitEnabledProtocols = SP_PROT_TLS1_2,  // allow only TLS v1.2
             .dwFlags = SCH_USE_STRONG_CRYPTO          // use only strong crypto alogorithms
                      | SCH_CRED_AUTO_CRED_VALIDATION  // automatically validate server certificate
                      | SCH_CRED_NO_DEFAULT_CREDS,     // no client certificate authentication
