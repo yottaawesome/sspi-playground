@@ -20,7 +20,7 @@
 #pragma comment (lib, "secur32.lib")
 #pragma comment (lib, "shlwapi.lib")
 
-constexpr unsigned TLS_MAX_PACKET_SIZE = 16384 + 512; // payload + extra over head for header/mac/padding (probably an overestimate)
+constexpr uint64_t TLS_MAX_PACKET_SIZE = 16384 + 512; // payload + extra over head for header/mac/padding (probably an overestimate)
 
 struct tls_socket 
 {
@@ -35,8 +35,7 @@ struct tls_socket
     char incoming[TLS_MAX_PACKET_SIZE];
 };
 
-// returns 0 on success or negative value on error
-int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
+int socket_connect(tls_socket* s, const std::wstring& hostname, unsigned short port)
 {
     // initialize windows sockets
     WSADATA wsadata;
@@ -55,14 +54,32 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
 
     std::wstring sport = std::to_wstring(port);
 
+    const bool success = WSAConnectByNameW(
+        s->sock,
+        const_cast<LPWSTR>(hostname.data()),
+        sport.data(),
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr
+    );
+
     // connect to server
-    if (!WSAConnectByNameW(s->sock, (LPWSTR)hostname, sport.data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr))
+    if (!success)
     {
         closesocket(s->sock);
         WSACleanup();
         return -1;
     }
 
+    return 0;
+}
+
+// returns 0 on success or negative value on error
+int tls_connect(tls_socket* s, const std::wstring& hostname)
+{
     // initialize schannel
     {
         SCHANNEL_CRED cred =
@@ -113,7 +130,7 @@ int tls_connect(tls_socket* s, const wchar_t* hostname, unsigned short port)
         SECURITY_STATUS sec = InitializeSecurityContextW(
             &s->handle,
             context,
-            context ? nullptr : (SEC_WCHAR*)hostname,
+            context ? nullptr : const_cast<SEC_WCHAR*>(hostname.data()),
             flags,
             0,
             0,
@@ -268,11 +285,11 @@ void tls_disconnect(tls_socket* s)
 }
 
 // returns 0 on success or negative value on error
-int tls_write(tls_socket* s, const void* buffer, unsigned size)
+int tls_write(tls_socket* s, const void* buffer, uint64_t size)
 {
     while (size != 0)
     {
-        int use = min(size, s->sizes.cbMaximumMessage);
+        int use = (std::min)(static_cast<unsigned long>(size), s->sizes.cbMaximumMessage);
 
         char wbuffer[TLS_MAX_PACKET_SIZE];
         assert(s->sizes.cbHeader + s->sizes.cbMaximumMessage + s->sizes.cbTrailer <= sizeof(wbuffer));
@@ -320,7 +337,7 @@ int tls_write(tls_socket* s, const void* buffer, unsigned size)
 
 // blocking read, waits & reads up to size bytes, returns amount of bytes received on success (<= size)
 // returns 0 on disconnect or negative value on error
-int tls_read(tls_socket* s, void* buffer, size_t size)
+int tls_read(tls_socket* s, void* buffer, uint64_t size)
 {
     int result = 0;
 
@@ -329,7 +346,7 @@ int tls_read(tls_socket* s, void* buffer, size_t size)
         if (s->decrypted)
         {
             // if there is decrypted data available, then use it as much as possible
-            int use = min(size, s->available);
+            int use = (std::min)(static_cast<int>(size), s->available);
             RtlCopyMemory(buffer, s->decrypted, use);
             buffer = (char*)buffer + use;
             size -= use;
@@ -445,7 +462,13 @@ int main()
     const char* path = "/";
 
     tls_socket s;
-    if (tls_connect(&s, hostname, 443) != 0)
+    if (socket_connect(&s, hostname, 443) != 0)
+    {
+        std::wcout << std::format(L"Error connecting socket to {}\n", hostname);
+        return -1;
+    }
+
+    if (tls_connect(&s, hostname) != 0)
     {
         std::wcout << std::format(L"Error connecting to {}\n", hostname);
         return -1;
